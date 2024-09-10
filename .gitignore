@@ -1,0 +1,7 @@
+rwdt*
+*.swp
+.*.un~
+.idea
+tmp/
+*.tmp
+profiles/

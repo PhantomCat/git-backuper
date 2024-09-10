@@ -1,5 +1,62 @@
 #!/bin/bash
 
+# Let's check the running parameters
+if [ $# -gt 0 ]
+then
+	if [ $# -eq 1 ]
+	then
+		case $1 in
+			# Adding git repos to the list
+			"--add-json")
+				mkdir -p /var/local/gbkp
+				if [ $(find . -name "gbkp*.json" | wc -l) -ge 1 ]
+				then
+					for jsonfile in $(find $(pwd) -name "gbkp*.json")
+					do
+						jq -r '.[].ssh_url_to_repo' $jsonfile >> repos.list
+						echo "New json file added to backup system" 
+					done
+				else
+					echo "No .json file named gbkp...json was found here"
+					exit 1
+				fi
+				exit
+				;;
+			# Make a new list
+			"--new-json")
+				mkdir -p /var/local/gbkp
+				echo "All json files will be replaced with the NEWEST one."
+				read -p "Are you sure? (type \"yes\"): " sure
+				if [ $sure = "yes" ]
+				then
+					if [ $(find . -name "gbkp*.json" | wc -l) -ge 1 ]
+					then
+						jq -r '.[].ssh_url_to_repo' $(\
+							find $(pwd) -name "gbkp*.json" -type f -printf '%T@ %p\n' | \
+							sort -k 1nr | sed 's/^[^ ]* //' | head -n 1\
+						)  > repos.list
+						exit
+					else
+						echo "No .json file named gbkp...json was found here"
+						exit 1
+					fi
+				else
+					echo OK
+					exit
+				fi
+				;;
+			*) 
+				echo "Unknown parameter. Read the README.md file."
+				exit 1
+				;;
+		esac
+	else
+		echo "Too many parameters, one was expected."
+		exit 1
+	fi
+fi
+
+
 clear
 echo "Welcome to git backuper script installator.
 Let me ask you a few questions to make the installation successfull."
