@@ -56,6 +56,9 @@ then
 	fi
 fi
 
+# Install mailing software we need 
+apt update
+apt install ssmtp mpack -y -qqq
 
 clear
 echo "Welcome to git backuper script installator.
@@ -63,7 +66,7 @@ Let me ask you a few questions to make the installation successfull."
 read -p "Press ENTER to continue" ok
 
 clear
-echo "1/7: Choose the name of your USB-to-SATA adapter from the list
+echo "1/11: Choose the name of your USB-to-SATA adapter from the list
 "
 PS3="Choose you device: "
 echo 
@@ -77,7 +80,7 @@ do
 done
 
 clear
-echo "2/7: Enter the partition label prefix.
+echo "2/11: Enter the partition label prefix.
 
 ATTENTION! It\'s extremely important to use disk (partition) label
 AND to make sure, that labels are not overlapping!
@@ -91,14 +94,14 @@ read -p "Write the disk label prefix: " DISK_LABEL_PREFIX
 sleep 1
 
 clear
-echo "3/7: Enter the folder name to save backups
+echo "3/11: Enter the folder name to save backups
 
 ------------------------------------------------------------"
 read -p "Write the folder name: " BKP_DIR
 sleep 1
 
 clear
-echo "4/7: Choose, how often you'll need to backup data
+echo "4/11: Choose, how often you'll need to backup data
 
 *tip: you can tune the schedule, just type: sudo crontab -e
 ------------------------------------------------------------"
@@ -117,23 +120,51 @@ case $interval in
 esac
 
 clear
-echo "5/7: How many MONTHLY backups do you want to keep?
+echo "5/11: How many MONTHLY backups do you want to keep?
 
 ------------------------------------------------------------"
 read -p "Number of monthly copies: " MONTHLY
 
 
 clear
-echo "6/7: How many WEEKLYLY backups do you want to keep?
+echo "6/11: How many WEEKLYLY backups do you want to keep?
 
 ------------------------------------------------------------"
 read -p "Number of weekly copies: " WEEKLY
 
 clear
-echo "5/7: How many DAILY backups do you want to keep?
+echo "7/11: How many DAILY backups do you want to keep?
 
 ------------------------------------------------------------"
 read -p "Number of daily copies: " DAILY
+clear
+
+clear
+echo "8/11: Email address to send emails FROM:
+
+------------------------------------------------------------"
+read -p "Email address FROM: " EMAIL_FROM
+clear
+
+clear
+echo "9/11: Password of email address \"FROM\":
+
+------------------------------------------------------------"
+read -p "Password: " EMAIL_PASS
+clear
+
+clear
+echo "10/11: SMTP server address:
+
+------------------------------------------------------------"
+read -p "Server address: " SMTP_SERVER
+clear
+
+clear
+echo "11/11: Email address to send emails TO:
+
+------------------------------------------------------------"
+read -p "Who will receive emails (TO): " EMAIL_TO
 clear
 
 echo "So, check all, you entered:
@@ -144,6 +175,10 @@ Backup interval:   $INTERVAL
 $MONTHLY	monthly backups will be stored
 $WEEKLY	weekly backups will be stored
 $DAILY	daily backups will be stored
+Email will be sent from: $EMAIL_FROM
+With password $EMAIL_PASS
+Through the $SMTP_SERVER (port 587 by default)
+to $EMAIL_TO
 "
 read -p "If all is OK type 1, if not - type 0 and start again
 Enter your choice: " finish
@@ -158,6 +193,8 @@ then
 	sed -i "s/MOTHLY=.*/MONTHLY=$MONTHLY/g" /etc/gbkp.conf
 	sed -i "s/WEEKLY=.*/WEEKLY=$WEEKLY/g" /etc/gbkp.conf
 	sed -i "s/DAILY=.*/DAILY=$DAILY/g" /etc/gbkp.conf
+	echo -e "UseSTARTTLS=YES\nmailhub=${SMTP_SERVER}:587\nAuthUser=$EMAIL_FROM\nAuthPass=${EMAIL_PASS}\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+	sed -i "s/EMAIL_TO=.*/EMAIL_TO=$EMAIL_TO/g" /etc/gbkp.conf
 	cp ./gbkp.sh /opt/
 	ln -s /opt/gbkp.sh /usr/bin/gbkp
 else
