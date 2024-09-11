@@ -194,6 +194,7 @@ then
 	sed -i "s/WEEKLY=.*/WEEKLY=$WEEKLY/g" /etc/gbkp.conf
 	sed -i "s/DAILY=.*/DAILY=$DAILY/g" /etc/gbkp.conf
 	echo -e "UseSTARTTLS=YES\nmailhub=${SMTP_SERVER}:587\nAuthUser=$EMAIL_FROM\nAuthPass=${EMAIL_PASS}\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+	echo "root:${EMAIL_FROM}:${SMTP_SERVER}:587" > /etc/ssmtp/revaliases
 	sed -i "s/EMAIL_TO=.*/EMAIL_TO=$EMAIL_TO/g" /etc/gbkp.conf
 	cp ./gbkp.sh /opt/
 	ln -s /opt/gbkp.sh /usr/bin/gbkp
