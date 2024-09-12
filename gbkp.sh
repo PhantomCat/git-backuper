@@ -4,6 +4,7 @@
 
 # Local variables to make our life easier
 logfile=/var/log/git-backuper_$(date "+%F_%H-%M-%S").log
+touch $logfile
 
 # Let's check the config file
 if [ ! -f /etc/gbkp.conf ]
@@ -148,7 +149,7 @@ do
 			sleep 10 
 		fi
 	done
-	rm -rf /srv/${short_label}
+	#rm -rf /srv/${short_label}
 done
 
 # Sending email
