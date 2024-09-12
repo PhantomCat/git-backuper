@@ -1,14 +1,14 @@
 #!/bin/bash
-#
+
 # Git repos backup script with rsync mirroring
 
 # Local variables to make our life easier
-logfile=/var/log/git-backuper_$(date "+%F_%H%-%M-%S").log
+logfile=/var/log/git-backuper_$(date "+%F_%H-%M-%S").log
 
 # Let's check the config file
 if [ ! -f /etc/gbkp.conf ]
 then
-	echo "ERROR, no cofig file" >> $logfile
+	echo "[ERROR] - $(date "+%F_%T") - no cofig file" >> $logfile
 	exit 1
 else
 	# include it with all of its variables
@@ -35,40 +35,44 @@ for label in $disks
 do
 	short_label=$(echo $label | awk -F"/" '{print $NF}')
 	mkdir -p /srv/${short_label}
+	sleep 1
 	mount $label /srv/${short_label}
-	mkdir -p /srv/${short_label}/${BKP_DIR}
+	sleep 1
+	mkdir -p /srv/${short_label}/${BKP_DIR}/git
 	mkdir -p /srv/${short_label}/${BKP_DIR}/archives
 done
 
 # read the repositories list and pull them into last mounted drive's backup directory
 while read line
 do
-	if [ $(grep $line /var/local/gbkp/cloned | wc -l) -eq 0 ]
+	if [ $(grep $line ${primary_backup_disk}/${BKP_DIR}/cloned | wc -l) -eq 0 ]
 	then	
-		repo_dir=$(echo $line | cut -f 2 -d ":" | sed 's/.git$//g')
-		git clone $line ${primary_backup_disk}/${BKP_DIR}/${repo_dir}
-		echo $line >> /var/local/gbkp/cloned
+		repo_dir=$(echo $line | cut -f 2 -d ":" | sed 's/\.git$//g')
+		git clone $line ${primary_backup_disk}/${BKP_DIR}/git/${repo_dir}
+		echo $line >> ${primary_backup_disk}/${BKP_DIR}/cloned
 	fi
 done < /var/local/gbkp/repos.list
 
 # Get directories with git repositories cloned
-git_dirs=$(find ${primary_backup_disk}/${BKP_DIR}/ -type d -name '.git' | sed 's/.git//g')
+git_dirs=$(find ${primary_backup_disk}/${BKP_DIR}/git/ -type d -name '.git' | sed 's/\.git//g')
 
 # in case the git repo already have the directory - get inside it and pull all branches in it
 for dir in ${git_dirs}
 do
 	cd $dir
-	git pull --all --recurse-submodules
+	pwd >> $logfile
+	git pull --all --recurse-submodules >> $logfile
 	if [ $? -eq 0 ]
 	then
 		echo "[OK] - $(date "+%F_%T") Successfully pulled git in $dir" >> $logfile
 	else	
-		echo -e "[ERROR] - $(date "+%F_%T") Not puuled git in $dir\n\t\tTRY TO PULL IT BY HAND" >> $logfile
+		echo -e "[ERROR] - $(date "+%F_%T") Not pulled git in $dir\n\t\tTRY TO PULL IT BY HAND" >> $logfile
 	fi
-done
+	sleep 1
 
-#return to the clonning directory
-cd ${primary_backup_disk}/${BKP_DIR}
+	#return to the clonning directory
+	cd ${primary_backup_disk}/${BKP_DIR}/git/
+done
 
 # archiving and compressing to tar.gz every git directory with date-stamp
 # adding "daily", "weekly" and "monthly" suffix to make backup rotation great
@@ -107,7 +111,7 @@ fi
 
 if [ $(find ${primary_backup_disk}/${BKP_DIR}/archives/ -type f -name "*_monthly.tar.gz" | wc -l) -ge 1 ]
 then
-	find ${primary_backup_disk}/${BKP_DIR}/archives/ -type f -name "*_monthly.tar.gz" -mtime +&(echo "$MONTHLY * 30" | bc) -delete >> $logfile
+	find ${primary_backup_disk}/${BKP_DIR}/archives/ -type f -name "*_monthly.tar.gz" -mtime +$(echo "$MONTHLY * 30" | bc) -delete >> $logfile
 else
 	echo "[WARNING] - $(date "+%F_%T") There is only ONE monthly archive left " >> $logfile
 fi
@@ -128,9 +132,23 @@ find /var/log/ -type f -name "git-backup*.log" -mtime -30 -delete >> $logfile
 
 # Unmounting drives
 sync
+sleep 1
 for label in $disks
 do
-	umount $label >> $logfile
+	short_label=$(echo $label | awk -F"/" '{print $NF}')
+	mounted=1
+	while [ mounted -eq 1 ]
+	do
+		echo Unmounting /srv/${short_label} >> $logfile
+		umount /srv/${short_label} >> $logfile
+		if [ $(mount | grep "/srv/${short_label}" | wc -l) -eq 0 ]
+		then
+			mounted=0
+		else
+			sleep 10 
+		fi
+	done
+	rm -rf /srv/${short_label}
 done
 
 # Sending email
@@ -138,10 +156,10 @@ if [ $(grep "ERROR|WARNING" $logfile | wc -l) -eq 0 ]
 then
 	body=/tmp/$(date "+%F_%H-%M").txt
 	echo -e "Backup $(date) was successful.\nSee log in attachment" > $body
-	mpack -s "Git backup routine - OK." -d $body $logfile $RECIPIENT
+	mpack -s "Git backup routine - OK." -d $body $logfile $EMAIL_TO
 else
 	body=/tmp/$(date "+%F_%H-%M").txt
 	echo -e "Backup $(date) had ERRORS!\nSee log in attachment" > $body
-	mpack -s "Git backup routine - NOT OK." -d $body $logfile $RECIPIENT
+	mpack -s "Git backup routine - NOT OK." -d $body $logfile $EMAIL_TO
 fi
 
