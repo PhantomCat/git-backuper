@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Git repos backup script with rsync mirroring
 
 # Local variables to make our life easier
@@ -7,14 +6,21 @@ logfile=/var/log/git-backuper_$(date "+%F_%H-%M-%S").log
 touch $logfile
 
 # Let's check the config file
-if [ ! -f /etc/gbkp.conf ]
+if [ ! -f /etc/gbkp/gbkp.conf ]
 then
 	echo "[ERROR] - $(date "+%F_%T") - no cofig file" >> $logfile
 	exit 1
 else
 	# include it with all of its variables
-	. /etc/gbkp.conf
+	. /etc/gbkp/gbkp.conf
 fi
+
+# Sending initial email
+for mail in $EMAIL_TO
+do
+	echo -e "Subject:Git backup routine - START\n\nGit backup route will start in 10 minutes! Make sure that you istalled the disks!" | sendmail $mail
+done
+sleep 600
 
 # check if the USB-to-SATA adapter is attached and powered on
 if [ $(lsusb | grep -i "$USB_DEV" | wc -l) -eq 0 ]
@@ -24,10 +30,10 @@ then
 fi
 
 # get all disks (partitions) with label we used to write backups
-disks=$(find /dev/disk/by-label/ -name "$PREFIX*")
+disks=$(find /dev/disk/by-label/ -name "$DISK_LABEL_PREFIX*")
 
 # choose the first disk in list as a primary to work on
-primary_backup_disk=/srv/$(echo $disks | head -n 1 | awk -F"/" '{print $NF}')
+primary_backup_disk=/srv/$(echo $disks | awk '{print $1}' | awk -F"/" '{print $NF}')
 
 # creating the mounting points,
 # mounting partitions and 
@@ -37,7 +43,7 @@ do
 	short_label=$(echo $label | awk -F"/" '{print $NF}')
 	mkdir -p /srv/${short_label}
 	sleep 1
-	mount $label /srv/${short_label}
+	mount $label /srv/${short_label} >> $logfile
 	sleep 1
 	mkdir -p /srv/${short_label}/${BKP_DIR}/git
 	mkdir -p /srv/${short_label}/${BKP_DIR}/archives
@@ -49,10 +55,12 @@ do
 	if [ $(grep $line ${primary_backup_disk}/${BKP_DIR}/cloned | wc -l) -eq 0 ]
 	then	
 		repo_dir=$(echo $line | cut -f 2 -d ":" | sed 's/\.git$//g')
-		git clone $line ${primary_backup_disk}/${BKP_DIR}/git/${repo_dir}
+		git clone $line ${primary_backup_disk}/${BKP_DIR}/git/${repo_dir} >> $logfile
 		echo $line >> ${primary_backup_disk}/${BKP_DIR}/cloned
+	else
+		echo "$line is already cloned, will be just updated" >> $logfile
 	fi
-done < /var/local/gbkp/repos.list
+done < /etc/gbkp/repo.list
 
 # Get directories with git repositories cloned
 git_dirs=$(find ${primary_backup_disk}/${BKP_DIR}/git/ -type d -name '.git' | sed 's/\.git//g')
@@ -72,7 +80,7 @@ do
 	sleep 1
 
 	#return to the clonning directory
-	cd ${primary_backup_disk}/${BKP_DIR}/git/
+	cd /srv/
 done
 
 # archiving and compressing to tar.gz every git directory with date-stamp
@@ -129,38 +137,77 @@ done
 
 
 # Cleaning old log files
-find /var/log/ -type f -name "git-backup*.log" -mtime -30 -delete >> $logfile
+find /var/log/ -type f -name "git-backup*.log" -mtime +30 -delete >> $logfile
 
 # Unmounting drives
-sync
-sleep 1
+cd /srv/
 for label in $disks
 do
 	short_label=$(echo $label | awk -F"/" '{print $NF}')
+	echo "Unmounting /srv/${short_label}" >> $logfile
 	mounted=1
-	while [ mounted -eq 1 ]
+	while [ $mounted -eq 1 ]
 	do
-		echo Unmounting /srv/${short_label} >> $logfile
-		umount /srv/${short_label} >> $logfile
+		umount /srv/${short_label} 2>> $logfile
 		if [ $(mount | grep "/srv/${short_label}" | wc -l) -eq 0 ]
 		then
 			mounted=0
+			echo "/srv/${short_label} unmounted" >> $logfile
 		else
+			sync
 			sleep 10 
 		fi
 	done
-	#rm -rf /srv/${short_label}
+	rmdir /srv/${short_label} >> $logfile
 done
 
+# sharing primary disk in RO
+cp --remove-destination /etc/gbkp/smbd.conf /etc/samba/smbd.conf
+for label in $disks
+do
+	short_label=$(echo $label | awk -F"/" '{print $NF}')
+	mkdir -p /mnt/${BKP_DIR}/${short_label}
+	mount $label /mnt/${BKP_DIR}/${short_label}
+	echo -e "[${short_label}]\n\tguest ok = Yes\n\tpath = /mnt/${BKP_DIR}/${short_label}\n\n" >> /etc/samba/smbd.conf
+done
+cp --remove-destination /etc/samba/smbd.conf /etc/samba/smb.conf
+smbd
+serv_ip=$(ip a | grep "inet " | sed '/inet 127.0.0.1*/d' | awk '{print $2}' | cut -f 1 -d "/")
+
 # Sending email
-if [ $(grep "ERROR|WARNING" $logfile | wc -l) -eq 0 ]
+if [ $(grep -e "ERROR|WARNING" $logfile | wc -l) -eq 0 ]
 then
-	body=/tmp/$(date "+%F_%H-%M").txt
-	echo -e "Backup $(date) was successful.\nSee log in attachment" > $body
-	mpack -s "Git backup routine - OK." -d $body $logfile $EMAIL_TO
+	body=/tmp/gbkp_$(date "+%F_%H-%M").msg
+	echo "
+Backup $(date) was successful.
+
+Started sharing on \\\\${serv_ip} (smb://${serv_ip} for linux)
+
+Sharing time 1 hour.
+
+See log in attachment" > $body
+	mpack -s "Git backup routine - OK." -d $body $logfile ${EMAIL_TO}
 else
-	body=/tmp/$(date "+%F_%H-%M").txt
-	echo -e "Backup $(date) had ERRORS!\nSee log in attachment" > $body
-	mpack -s "Git backup routine - NOT OK." -d $body $logfile $EMAIL_TO
+	body=/tmp/gbkp_$(date "+%F_%H-%M").msg
+	echo "
+Backup $(date) has ERRORS or WARNINGS!
+
+Started sharing on \\\\${serv_ip} (smb://${serv_ip} for linux)
+
+Sharing time 1 hour.
+
+See log in attachment" > $body
+	mpack -s "Git backup routine - NOT OK." -d $body $logfile ${EMAIL_TO}
 fi
 
+# Finishing all jobs
+sleep 3600
+killall smbd
+umount /mnt/${BKP_DIR}/*
+rmdir /mnt/${BKP_DIR}/*
+
+# Sending finishing emails
+for mail in $EMAIL_TO
+do
+	echo -e "Subject:Git backup routine - All Done.\n\nNow you can remove disks and put them into safe!" | sendmail $mail
+done

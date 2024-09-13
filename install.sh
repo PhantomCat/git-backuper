@@ -8,12 +8,12 @@ then
 		case $1 in
 			# Adding git repos to the list
 			"--add-json")
-				mkdir -p /var/local/gbkp
+				mkdir -p /etc/gbkp
 				if [ $(find . -name "gbkp*.json" | wc -l) -ge 1 ]
 				then
 					for jsonfile in $(find $(pwd) -name "gbkp*.json")
 					do
-						jq -r '.[].ssh_url_to_repo' $jsonfile >> repos.list
+						jq -r '.[].ssh_url_to_repo' $jsonfile >> /etc/gbkp/repo.list
 						echo "New json file added to backup system" 
 					done
 				else
@@ -24,7 +24,7 @@ then
 				;;
 			# Make a new list
 			"--new-json")
-				mkdir -p /var/local/gbkp
+				mkdir -p /etc/gbkp
 				echo "All json files will be replaced with the NEWEST one."
 				read -p "Are you sure? (type \"yes\"): " sure
 				if [ $sure = "yes" ]
@@ -34,7 +34,7 @@ then
 						jq -r '.[].ssh_url_to_repo' $(\
 							find $(pwd) -name "gbkp*.json" -type f -printf '%T@ %p\n' | \
 							sort -k 1nr | sed 's/^[^ ]* //' | head -n 1\
-						)  > repos.list
+						)  > /etc/gbkp/repo.list
 						exit
 					else
 						echo "No .json file named gbkp...json was found here"
@@ -84,11 +84,12 @@ echo "2/11: Enter the partition label prefix.
 
 ATTENTION! It\'s extremely important to use disk (partition) label
 AND to make sure, that labels are not overlapping!
-E.g. If your partitions labels are:
-	backup_disk_01
-	backup_disk_02
-	backup_disk_03
-Enter \"backup_disk\" or \"backup_disk_\"
+E.g. Your partitions labels at this time are:"
+for label in /dev/disk/by-label/*
+do
+	echo -e "\t$label"
+done
+echo "Enter the left side of labels, that doesn't differs 
 ------------------------------------------------------------"
 read -p "Write the disk label prefix: " DISK_LABEL_PREFIX 
 sleep 1
@@ -108,15 +109,17 @@ echo "4/11: Choose, how often you'll need to backup data
 read -p "   1) Once in hour
    2) Once in 6 hours
    3) Once a day in 3 AM
+   4) Once a week in 10:10 on Monday
 Choose interval: " interval
 case $interval in
-	1) INTERVAL="0 *	* * *	"
+	1) INTERVAL="0 * * * *	"
 		break;;
-	2) INTERVAL="0 */6	* * *	"
+	2) INTERVAL="0 */6 * * *	"
 		break;;
-	3) INTERVAL="0 3	* * *	"
+	3) INTERVAL="0 3 * * *	"
 		break;;
-	*) INTERVAL="0 3	*/2 * *	"
+	4) INTERVAL="10 10 * * 1"
+	*) INTERVAL="0 3 */2 * *	"
 esac
 
 clear
@@ -161,8 +164,9 @@ read -p "Server address: " SMTP_SERVER
 clear
 
 clear
-echo "11/11: Email address to send emails TO:
-
+echo "11/11: Email addresses to send emails TO:
+TIP: You can add more, than one email to receive,
+just break them with spaces
 ------------------------------------------------------------"
 read -p "Who will receive emails (TO): " EMAIL_TO
 clear
@@ -185,17 +189,18 @@ Enter your choice: " finish
 
 if [ $finish -eq 1 ]
 then
-	cp -f ./gbkp.conf /etc/
-	sed -i "s/USB_DEV=.*/USB_DEV=$USB_DEV/g" /etc/gbkp.conf
-	sed -i "s/DISK_LABEL_PREFIX=.*/DISK_LABEL_PREFIX=$DISK_LABEL_PREFIX/g" /etc/gbkp.conf
-	sed -i "s/BKP_DIR=.*/BKP_DIR=$BKP_DIR/g" /etc/gbkp.conf
-	echo "$INTERVAL root /opt/gbkp" > /etc/cron.d/gbkp
-	sed -i "s/MOTHLY=.*/MONTHLY=$MONTHLY/g" /etc/gbkp.conf
-	sed -i "s/WEEKLY=.*/WEEKLY=$WEEKLY/g" /etc/gbkp.conf
-	sed -i "s/DAILY=.*/DAILY=$DAILY/g" /etc/gbkp.conf
+	mkdir -p /etc/gbkp
+	cp -f ./gbkp.conf /etc/gbkp/
+	sed -i "s/USB_DEV=.*/USB_DEV=$USB_DEV/g" /etc/gbkp/gbkp.conf
+	sed -i "s/DISK_LABEL_PREFIX=.*/DISK_LABEL_PREFIX=$DISK_LABEL_PREFIX/g" /etc/gbkp/gbkp.conf
+	sed -i "s/BKP_DIR=.*/BKP_DIR=$BKP_DIR/g" /etc/gbkp/gbkp.conf
+	echo "$INTERVAL root /opt/gbkp.sh" > /etc/cron.d/gbkp
+	sed -i "s/MOTHLY=.*/MONTHLY=$MONTHLY/g" /etc/gbkp/gbkp.conf
+	sed -i "s/WEEKLY=.*/WEEKLY=$WEEKLY/g" /etc/gbkp/gbkp.conf
+	sed -i "s/DAILY=.*/DAILY=$DAILY/g" /etc/gbkp/gbkp.conf
 	echo -e "UseSTARTTLS=YES\nmailhub=${SMTP_SERVER}:587\nAuthUser=$EMAIL_FROM\nAuthPass=${EMAIL_PASS}\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 	echo "root:${EMAIL_FROM}:${SMTP_SERVER}:587" > /etc/ssmtp/revaliases
-	sed -i "s/EMAIL_TO=.*/EMAIL_TO=$EMAIL_TO/g" /etc/gbkp.conf
+	sed -i "s/EMAIL_TO=.*/EMAL_TO=$EMAIL_TO/g" /etc/gbkp/gbkp.conf
 	cp ./gbkp.sh /opt/
 	ln -s /opt/gbkp.sh /usr/bin/gbkp
 else
