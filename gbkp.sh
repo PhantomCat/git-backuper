@@ -131,7 +131,9 @@ do
 	short_label=$(echo $label | awk -F"/" '{print $NF}')
 	if [ "/srv/${short_label}" != ${primary_backup_disk} ]
 	then
+		echo -e "------------------------------\n\nSyncronization of disks started" >> $logfile 
 		rsync -aqzhHl --delete ${primary_backup_disk}/${BKP_DIR} /srv/${short_label}/${BKP_DIR} >> $logfile
+		echo -e "------------------------------\n\nSyncronization of disks finished" >> $logfile 
 	fi
 done
 
@@ -154,7 +156,6 @@ do
 			mounted=0
 			echo "/srv/${short_label} unmounted" >> $logfile
 		else
-			sync
 			sleep 10 
 		fi
 	done
@@ -172,16 +173,16 @@ do
 done
 cp --remove-destination /etc/samba/smbd.conf /etc/samba/smb.conf
 smbd
-serv_ip=$(ip a | grep "inet " | sed '/inet 127.0.0.1*/d' | awk '{print $2}' | cut -f 1 -d "/")
+serv_ip=$(hostname -I | cut -f 1 -d " ")
 
 # Sending email
-if [ $(grep -e "ERROR|WARNING" $logfile | wc -l) -eq 0 ]
+if [ $(grep -E 'ERROR|WARNING' $logfile | wc -l) -eq 0 ]
 then
 	body=/tmp/gbkp_$(date "+%F_%H-%M").msg
 	echo "
 Backup $(date) was successful.
 
-Started sharing on \\\\${serv_ip} (smb://${serv_ip} for linux)
+Started sharing on \\\\${serv_ip} (smb://${serv_ip}/ for linux)
 
 Sharing time 1 hour.
 
@@ -200,8 +201,8 @@ See log in attachment" > $body
 	mpack -s "Git backup routine - NOT OK." -d $body $logfile ${EMAIL_TO}
 fi
 
-# Finishing all jobs
-sleep 3600
+# Finishing all jobs after one hour
+sleep 360
 killall smbd
 umount /mnt/${BKP_DIR}/*
 rmdir /mnt/${BKP_DIR}/*
