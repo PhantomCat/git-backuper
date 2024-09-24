@@ -2,7 +2,7 @@
 # Git repos backup script with rsync mirroring
 
 # Local variables to make our life easier
-logfile=/var/log/git-backuper_$(date "+%F_%H-%M-%S").log
+logfile=/var/log/gbkp/git-backuper_$(date "+%F_%H-%M-%S").log
 touch $logfile
 
 # Let's check the config file
@@ -131,12 +131,11 @@ do
 	short_label=$(echo $label | awk -F"/" '{print $NF}')
 	if [ "/srv/${short_label}" != ${primary_backup_disk} ]
 	then
-		echo -e "------------------------------\n\nSyncronization of disks started" >> $logfile 
+		echo -e "------------------------------\n\nSyncronization of disk ${short_label} started" >> $logfile 
 		rsync -aqzhHl --delete ${primary_backup_disk}/${BKP_DIR} /srv/${short_label}/${BKP_DIR} >> $logfile
-		echo -e "------------------------------\n\nSyncronization of disks finished" >> $logfile 
+		echo -e "------------------------------\n\nSyncronization of disk ${short_label} finished" >> $logfile 
 	fi
 done
-
 
 # Cleaning old log files
 find /var/log/ -type f -name "git-backup*.log" -mtime +30 -delete >> $logfile
