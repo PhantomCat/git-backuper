@@ -70,6 +70,9 @@ for dir in ${git_dirs}
 do
 	cd $dir
 	pwd >> $logfile
+	# Проверяем все ветки и стягиваем их все.
+	git branch -r | grep -v '->' | while read remote; do git branch --track "${remote#origin/}" "$remote"; done
+	git fetch --all -f -v >> $logfile
 	git pull --all --recurse-submodules >> $logfile
 	if [ $? -eq 0 ]
 	then
